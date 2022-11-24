@@ -1,175 +1,9 @@
 // SPDX-License-Identifier: MIT
-interface IJoeRouter01 {
-    function factory() external pure returns (address);
-
-    function WAVAX() external pure returns (address);
-
-    function addLiquidity(
-        address tokenA,
-        address tokenB,
-        uint256 amountADesired,
-        uint256 amountBDesired,
-        uint256 amountAMin,
-        uint256 amountBMin,
-        address to,
-        uint256 deadline
-    )
-        external
-        returns (
-            uint256 amountA,
-            uint256 amountB,
-            uint256 liquidity
-        );
-
-    function addLiquidityAVAX(
-        address token,
-        uint256 amountTokenDesired,
-        uint256 amountTokenMin,
-        uint256 amountAVAXMin,
-        address to,
-        uint256 deadline
-    )
-        external
-        payable
-        returns (
-            uint256 amountToken,
-            uint256 amountAVAX,
-            uint256 liquidity
-        );
-
-    function removeLiquidity(
-        address tokenA,
-        address tokenB,
-        uint256 liquidity,
-        uint256 amountAMin,
-        uint256 amountBMin,
-        address to,
-        uint256 deadline
-    ) external returns (uint256 amountA, uint256 amountB);
-
-    function removeLiquidityAVAX(
-        address token,
-        uint256 liquidity,
-        uint256 amountTokenMin,
-        uint256 amountAVAXMin,
-        address to,
-        uint256 deadline
-    ) external returns (uint256 amountToken, uint256 amountAVAX);
-
-    function removeLiquidityWithPermit(
-        address tokenA,
-        address tokenB,
-        uint256 liquidity,
-        uint256 amountAMin,
-        uint256 amountBMin,
-        address to,
-        uint256 deadline,
-        bool approveMax,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external returns (uint256 amountA, uint256 amountB);
-
-    function removeLiquidityAVAXWithPermit(
-        address token,
-        uint256 liquidity,
-        uint256 amountTokenMin,
-        uint256 amountAVAXMin,
-        address to,
-        uint256 deadline,
-        bool approveMax,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external returns (uint256 amountToken, uint256 amountAVAX);
-
-    function swapExactTokensForTokens(
-        uint256 amountIn,
-        uint256 amountOutMin,
-        address[] calldata path,
-        address to,
-        uint256 deadline
-    ) external returns (uint256[] memory amounts);
-
-    function swapTokensForExactTokens(
-        uint256 amountOut,
-        uint256 amountInMax,
-        address[] calldata path,
-        address to,
-        uint256 deadline
-    ) external returns (uint256[] memory amounts);
-
-    function swapExactAVAXForTokens(
-        uint256 amountOutMin,
-        address[] calldata path,
-        address to,
-        uint256 deadline
-    ) external payable returns (uint256[] memory amounts);
-
-    function swapTokensForExactAVAX(
-        uint256 amountOut,
-        uint256 amountInMax,
-        address[] calldata path,
-        address to,
-        uint256 deadline
-    ) external returns (uint256[] memory amounts);
-
-    function swapExactTokensForAVAX(
-        uint256 amountIn,
-        uint256 amountOutMin,
-        address[] calldata path,
-        address to,
-        uint256 deadline
-    ) external returns (uint256[] memory amounts);
-
-    function swapAVAXForExactTokens(
-        uint256 amountOut,
-        address[] calldata path,
-        address to,
-        uint256 deadline
-    ) external payable returns (uint256[] memory amounts);
-
-    function quote(
-        uint256 amountA,
-        uint256 reserveA,
-        uint256 reserveB
-    ) external pure returns (uint256 amountB);
-
-    function getAmountOut(
-        uint256 amountIn,
-        uint256 reserveIn,
-        uint256 reserveOut
-    ) external pure returns (uint256 amountOut);
-
-    function getAmountIn(
-        uint256 amountOut,
-        uint256 reserveIn,
-        uint256 reserveOut
-    ) external pure returns (uint256 amountIn);
-
-    function getAmountsOut(uint256 amountIn, address[] calldata path)
-        external
-        view
-        returns (uint256[] memory amounts);
-
-    function getAmountsIn(uint256 amountOut, address[] calldata path)
-        external
-        view
-        returns (uint256[] memory amounts);
-}
-
-interface WrappedEth {
-    function approve(address guy, uint256 wad) external returns (bool);
-
-    function transfer(address guy, uint256 wad) external returns (bool);
-}
-
 pragma solidity ^0.8;
 
 import '@openzeppelin/contracts/utils/math/SafeMath.sol';
 import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 
-import "hardhat/console.sol";
 import './interfaces/traderjoe/ERC3156FlashBorrowerInterface.sol';
 import './interfaces/traderjoe/JCollateralCapErc20.sol';
 import './interfaces/traderjoe/JTokenInterface.sol';
@@ -178,7 +12,7 @@ import './interfaces/traderjoe/JoeRouter02.sol';
 
 contract TraderJoeLiquidator is ERC3156FlashBorrowerInterface {
     using SafeMath for uint256;
-address wEthAddress = 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7;
+
     address private WAVAX;
     address private JAVAX;
     address private USDC;
@@ -219,74 +53,69 @@ address wEthAddress = 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7;
         IERC20(asset).transfer(owner, balance);
     }
 
-    
-    
-    function Arb(
-        IJoeRouter01 router,
-        uint256 amountOutMin,
-        uint256 amountIn,
-        address[] calldata path ,
-        address Jtoken,
-        address borrower 
+    function getAccountLiquidity(address borrower) external view returns (uint256 liquidity, uint256 shortfall) {
+        // liquidity and shortfall in USD scaled up by 1e18
+        (uint256 error, uint256 _liquidity, uint256 _shortfall) = Joetroller(JOETROLLER).getAccountLiquidity(borrower);
+        require(error == 0, 'error');
+        return (_liquidity, _shortfall);
+    }
+
+    function liquidate(
+        address borrower,
+        address repayAsset,
+        address collateralAsset
     ) external {
         require(msg.sender == owner, 'not owner');
+
+        bytes memory data = abi.encode(borrower, repayAsset, collateralAsset);
+
         PriceOracle priceOracle = PriceOracle(Joetroller(JOETROLLER).oracle());
 
-        uint256 borrowBalance = JCollateralCapErc20(Jtoken).borrowBalanceCurrent(borrower);
-        uint256 collateralBalance = JCollateralCapErc20(Jtoken).balanceOfUnderlying(borrower);
-        bytes memory data = abi.encode(router, amountIn, path ,Jtoken );
-        console.log("1");
-        (address borrowAsset, uint256 borrowAmount) = getBorrowAssetAndAmount(Jtoken, borrower ,amountIn);
-        console.log("2");
-        JCollateralCapErc20(Jtoken).flashLoan(this, address(this), borrowAmount, data);
-         console.log("got loan ");
-        
-         
-        uint256[] memory amounts = router.swapExactTokensForTokens(
-            amountIn,
-            amountOutMin,
-            path,
-            address(this),
-            block.timestamp + 100 
-            
-        );
-        console.log("eye of the tiger ");
+        uint256 borrowBalance = JCollateralCapErc20(repayAsset).borrowBalanceCurrent(borrower);
+        uint256 collateralBalance = JCollateralCapErc20(collateralAsset).balanceOfUnderlying(borrower);
+        uint256 collateralBalanceUSD = (collateralBalance * priceOracle.getUnderlyingPrice(JToken(collateralAsset))) /
+            10**18;
 
-       //JCollateralCapErc20(borrowAsset).flashLoan(this, address(this), borrowAmount, data);
-        // JoeRouter02(JOEROUTER02).swapExactTokensForTokens(amountIn, amountOutMin, path, address(this), block.timestamp + 100);
+        uint256 repayAmount = (borrowBalance * Joetroller(JOETROLLER).closeFactorMantissa()) / 10**18;
+        uint256 repayAmountUSD = (repayAmount * priceOracle.getUnderlyingPrice(JToken(repayAsset))) / 10**18;
+
+        // NOTE : make sure the borrower has enough collateral in a single token for the max repay amount
+        if (repayAmountUSD >= collateralBalanceUSD) {
+            repayAmount = ((((collateralBalanceUSD * 10**18) / Joetroller(JOETROLLER).liquidationIncentiveMantissa()) *
+                10**18) / priceOracle.getUnderlyingPrice(JToken(repayAsset)));
+        }
+
+        (address borrowAsset, uint256 borrowAmount) = getBorrowAssetAndAmount(repayAsset, collateralAsset, repayAmount);
+        JCollateralCapErc20(borrowAsset).flashLoan(this, address(this), borrowAmount, data);
     }
-     //console.log("i am here start");
-    // JoeRouter02(JOEROUTER02).swapExactTokensForTokens(amountIn, amountOutMin, path, address(this), block.timestamp + 100);
 
-
+    // NOTE : borrowed/seized and borrowed/repayed assets have to be different because of nonReentrant functions
     function getBorrowAssetAndAmount(
-        address Jtoken,
-        address borrower,
-        uint256 amountIn
+        address repayAsset,
+        address collateralAsset,
+        uint256 repayAmount
     ) private view returns (address, uint256) {
         address borrowAsset;
         uint256 borrowAmount;
         PriceOracle priceOracle = PriceOracle(Joetroller(JOETROLLER).oracle());
 
-        if (borrower == JAVAX || Jtoken == JAVAX) {
-            if (borrower != JUSDT && Jtoken != JUSDT) {
-                Jtoken = JUSDT;
+        if (repayAsset == JAVAX || collateralAsset == JAVAX) {
+            if (repayAsset != JUSDT && collateralAsset != JUSDT) {
+                borrowAsset = JUSDT;
             } else {
-                Jtoken = JUSDC;
+                borrowAsset = JUSDC;
             }
-            amountIn = (priceOracle.getUnderlyingPrice(JToken(Jtoken)) * amountIn) / 10**18 / 10**12;
+            borrowAmount = (priceOracle.getUnderlyingPrice(JToken(repayAsset)) * repayAmount) / 10**18 / 10**12;
         } else {
-            Jtoken = JAVAX;
-            amountIn =
-                (priceOracle.getUnderlyingPrice(JToken(Jtoken)) * amountIn) /
+            borrowAsset = JAVAX;
+            borrowAmount =
+                (priceOracle.getUnderlyingPrice(JToken(repayAsset)) * repayAmount) /
                 priceOracle.getUnderlyingPrice(JToken(JAVAX));
         }
 
-        return (Jtoken, amountIn);
+        return (borrowAsset, borrowAmount);
     }
-   
 
-    
     function onFlashLoan(
         address initiator,
         address token,
@@ -297,26 +126,109 @@ address wEthAddress = 0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7;
         uint256 amountOwing = amount.add(fee);
         IERC20(token).approve(msg.sender, amountOwing);
 
-        (address Router, address path, address Jtoken) = abi.decode(data, (address, address, address));
+        (address borrower, address repayAsset, address collateralAsset) = abi.decode(data, (address, address, address));
 
-        
+        // 1. swap token for repayAsset underlying
+        address repayAssetUnderlying = JCollateralCapErc20(repayAsset).underlying();
+        uint256 repayAssetUnderlyingTokens = getAmountOutMin(token, repayAssetUnderlying, amount);
+        swap(token, repayAssetUnderlying, amount, repayAssetUnderlyingTokens, address(this));
 
-        
+        // 2. liquidateBorrow
+        uint256 maxRepayAmount = (JCollateralCapErc20(repayAsset).borrowBalanceCurrent(borrower) *
+            Joetroller(JOETROLLER).closeFactorMantissa()) / 10**18;
+        if (repayAssetUnderlyingTokens > maxRepayAmount) {
+            repayAssetUnderlyingTokens =
+                maxRepayAmount /
+                Joetroller(JOETROLLER).liquidationIncentiveMantissa() /
+                10**18;
+        }
+        IERC20(repayAssetUnderlying).approve(repayAsset, repayAssetUnderlyingTokens);
+        require(
+            JCollateralCapErc20(repayAsset).liquidateBorrow(
+                borrower,
+                repayAssetUnderlyingTokens,
+                JTokenInterface(collateralAsset)
+            ) == 0,
+            'liquidation failed'
+        );
+
+        swapSeizedTokens(collateralAsset, token, amountOwing);
+
         return keccak256('ERC3156FlashBorrowerInterface.onFlashLoan');
     }
 
-     function approveRouter(address router) external  {
-        WrappedEth(wEthAddress).approve(router, type(uint256).max);
-    }
-
-    function simulateSwap(
-        IJoeRouter01 router,
+    function swap(
+        address tokenIn,
+        address tokenOut,
         uint256 amountIn,
-        address[] memory path
-    ) external view returns (uint256[] memory amounts) {
-        return router.getAmountsOut(amountIn, path);
-    }
-    
+        uint256 amountOutMin,
+        address to
+    ) private {
+        IERC20(tokenIn).approve(JOEROUTER02, amountIn);
 
-    
+        address[] memory path;
+        if (tokenIn == WAVAX || tokenOut == WAVAX) {
+            path = new address[](2);
+            path[0] = tokenIn;
+            path[1] = tokenOut;
+        } else {
+            path = new address[](3);
+            path[0] = tokenIn;
+            path[1] = WAVAX;
+            path[2] = tokenOut;
+        }
+
+        JoeRouter02(JOEROUTER02).swapExactTokensForTokens(amountIn, amountOutMin, path, to, block.timestamp);
+    }
+
+    function getAmountOutMin(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn
+    ) private view returns (uint256) {
+        address[] memory path;
+        if (tokenIn == WAVAX || tokenOut == WAVAX) {
+            path = new address[](2);
+            path[0] = tokenIn;
+            path[1] = tokenOut;
+        } else {
+            path = new address[](3);
+            path[0] = tokenIn;
+            path[1] = WAVAX;
+            path[2] = tokenOut;
+        }
+
+        // same length as path
+        uint256[] memory amountOutMins = JoeRouter02(JOEROUTER02).getAmountsOut(amountIn, path);
+
+        return amountOutMins[path.length - 1];
+    }
+
+    function swapSeizedTokens(
+        address seizedAsset,
+        address token,
+        uint256 amountOwing
+    ) private {
+        // redeem jAsset
+        uint256 underlyingSeizedTokens = JCollateralCapErc20(seizedAsset).balanceOfUnderlying(address(this));
+        JCollateralCapErc20(seizedAsset).redeemUnderlying(underlyingSeizedTokens);
+
+        // swap seized tokens for borrowed asset
+        address seizedUnderlyingAsset = JCollateralCapErc20(seizedAsset).underlying();
+        uint256 seizedUnderlyingTokens = IERC20(seizedUnderlyingAsset).balanceOf(address(this));
+        swap(
+            seizedUnderlyingAsset,
+            token,
+            seizedUnderlyingTokens,
+            getAmountOutMin(seizedUnderlyingAsset, token, seizedUnderlyingTokens),
+            address(this)
+        );
+
+        // swap profits to USDC if needed
+        if (token != USDC) {
+            uint256 tokenAmount = IERC20(token).balanceOf(address(this));
+            uint256 profitTokens = tokenAmount - amountOwing;
+            swap(token, USDC, profitTokens, 1, address(this));
+        }
+    }
 }
